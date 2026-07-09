@@ -30,3 +30,17 @@ def avg_captured(sol, N, in_cap):
     LPA_  = sol.y[4*N:5*N, -1]
     LPA2_ = sol.y[6*N:7*N, -1]
     return np.mean((LPA_ + LPA2_)[in_cap])
+
+
+def captured_series(sol, N, in_cap):
+    """キャプチャーゾーン平均 [LPA]+[LPA₂] [M] の全時刻の時系列"""
+    LPA_  = sol.y[4*N:5*N, :]
+    LPA2_ = sol.y[6*N:7*N, :]
+    return np.mean((LPA_ + LPA2_)[in_cap, :], axis=0)
+
+
+def LPA_LPA2_series(sol, N, in_cap):
+    """キャプチャーゾーン平均 [LPA], [LPA₂] [M] の全時刻の時系列 (別々に返す)"""
+    LPA_  = sol.y[4*N:5*N, :]
+    LPA2_ = sol.y[6*N:7*N, :]
+    return np.mean(LPA_[in_cap, :], axis=0), np.mean(LPA2_[in_cap, :], axis=0)

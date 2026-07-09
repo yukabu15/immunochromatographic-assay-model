@@ -1,19 +1,16 @@
 import numpy as np
 from scipy.integrate import solve_ivp
 
-from .params import (
-    ka1, ka2, ka3, ka4, ka5, ka6,
-    kd1, kd2, kd3, kd4, kd5, kd6,
-    L, xL1, xL2, U, DA, DP,
-)
+from .params import L, xL1, xL2, U, DA
 from .equilibrium import compute_equilibrium
+from .kinetics import rate_constants, steric_factor, diffusion_coefficient
 
 
 # ============================================================
 # コアシミュレーション関数 (7 変数 PDE)
 # ============================================================
 def simulate(A0, P0, L0_tot, case='PMU', N=200, T=600.0,
-             t_eval=None, with_PA2=True):
+             t_eval=None, with_PA2=True, d_nm=None, alpha=1.0):
     """
     拡張 PDE を BDF 法で数値積分。
 
@@ -26,6 +23,10 @@ def simulate(A0, P0, L0_tot, case='PMU', N=200, T=600.0,
         y[5N:6N]    = [PA₂]     粒子-二重アナライト複合体  ★新規
         y[6N:7N]    = [LPA₂]    リガンド-粒子-二重アナライト ★新規
 
+    d_nm, alpha: 粒子径依存キネティクスを使う場合に指定する。
+        d_nm=None (デフォルト) なら旧モデル(サイズ非依存の固定速度定数,
+        g=1, DP=params.DP)と完全に一致する。
+
     Returns: (sol, x, in_cap, Ae, Pe, PAe, PA2e)
     """
     dx = L / N
@@ -34,19 +35,18 @@ def simulate(A0, P0, L0_tot, case='PMU', N=200, T=600.0,
     L0_arr = np.zeros(N)
     L0_arr[in_cap] = L0_tot
 
-    # PME 平衡濃度
-    Ae, Pe, PAe, PA2e = compute_equilibrium(A0, P0, with_PA2)
+    # 粒子径依存の速度定数・立体障害係数・拡散係数
+    rc     = rate_constants(d_nm, alpha, with_PA2)
+    g      = steric_factor(d_nm, L0_tot)
+    DP_eff = diffusion_coefficient(d_nm)
+
+    # PME 平衡濃度 (流入条件と内部PDEのキネティクスを一致させる)
+    Ae, Pe, PAe, PA2e = compute_equilibrium(A0, P0, with_PA2, d_nm=d_nm, alpha=alpha)
 
     if case == 'PMU':
         A_in, P_in, PA_in, PA2_in = A0, P0, 0.0, 0.0
     else:  # PME
         A_in, P_in, PA_in, PA2_in = Ae, Pe, PAe, PA2e
-
-    # PA₂ 反応を無効化するためのフラグ
-    _ka5 = ka5 if with_PA2 else 0.0
-    _kd5 = kd5 if with_PA2 else 0.0
-    _ka6 = ka6 if with_PA2 else 0.0
-    _kd6 = kd6 if with_PA2 else 0.0
 
     def derivs(t, y):
         A    = y[0:N]
@@ -77,30 +77,29 @@ def simulate(A0, P0, L0_tot, case='PMU', N=200, T=600.0,
         d2PA  = diff2(PA,  PA_in)
         d2PA2 = diff2(PA2, PA2_in)
 
-        # --- 自由リガンド濃度 (LPA₂ を含む) ---
-        L_free = L0_arr - LA - LPA - LPA2        # ★ LPA₂ 追加
+        # --- 自由リガンド濃度 (立体障害係数 g: d_nm=None なら g=1 で旧式と一致) ---
+        Lf = L0_arr - LA - g*LPA - g*LPA2
+        if d_nm is not None:
+            Lf = np.maximum(Lf, 0.0)   # 大粒子径で g が大きい場合の数値的安全策
 
-        # --- 反応速度 ---
-        F_PA    = ka1*A*P       - kd1*PA          # ① A+P → PA
-        F_LA    = (ka2*A*L_free - kd2*LA           # ② A+L → LA (net)
-                   - ka4*LA*P   + kd4*LPA)
-        F1_LPA  = ka3*PA*L_free - kd3*LPA          # ③ PA+L → LPA
-        F2_LPA  = ka4*LA*P      - kd4*LPA          # ④ P+LA → LPA
-        F_LPA   = F1_LPA + F2_LPA
-        F_PA2   = _ka5*PA*A     - _kd5*PA2         # ⑤ PA+A → PA₂ ★
-        F_LPA2  = _ka6*PA2*L_free - _kd6*LPA2      # ⑥ PA₂+L → LPA₂ ★
-
-        # A の L 直接消費 (dA/dt に使用)
-        r_A = ka2*A*L_free - kd2*LA
+        # --- 反応速度 (8反応) ---
+        F1  = rc.ka1 *A*P    - rc.kd1 *PA          # (1)  A+P   → PA
+        F1p = rc.ka1p*PA*A   - rc.kd1p*PA2         # (1') A+PA  → PA2
+        F2  = rc.ka2 *A*Lf   - rc.kd2 *LA          # (2)  A+L   → LA
+        F3  = rc.ka3 *PA*Lf  - rc.kd3 *LPA         # (3)  PA+L  → LPA
+        F3p = rc.ka3p*PA2*Lf - rc.kd3p*LPA2        # (3') PA2+L → LPA2
+        F4  = rc.ka4 *LA*P   - rc.kd4 *LPA         # (4)  P+LA  → LPA
+        F4p = rc.ka4p*LA*PA  - rc.kd4p*LPA2        # (4') PA+LA → LPA2
+        F5  = rc.ka5 *A*LPA  - rc.kd5 *LPA2        # (5)  A+LPA → LPA2
 
         # --- 微分方程式 ---
-        dA_dt    = DA*d2A   - U*dA_adv   - F_PA - r_A - F_PA2    # ★ F_PA2 追加
-        dP_dt    = DP*d2P   - U*dP_adv   - F_PA - F2_LPA
-        dPA_dt   = DP*d2PA  - U*dPA_adv  + F_PA - F1_LPA - F_PA2  # ★ F_PA2 追加
-        dLA_dt   = F_LA
-        dLPA_dt  = F_LPA
-        dPA2_dt  = DP*d2PA2 - U*dPA2_adv + F_PA2 - F_LPA2         # ★ 新規
-        dLPA2_dt = F_LPA2                                          # ★ 新規
+        dA_dt    = DA*d2A     - U*dA_adv   - (F1 + F1p + F2 + F5)
+        dP_dt    = DP_eff*d2P - U*dP_adv   - (F1 + F4)
+        dPA_dt   = DP_eff*d2PA  - U*dPA_adv  + F1 - F1p - F3 - F4p
+        dPA2_dt  = DP_eff*d2PA2 - U*dPA2_adv + F1p - F3p
+        dLA_dt   = F2 - F4 - F4p
+        dLPA_dt  = F3 + F4 - F5
+        dLPA2_dt = F3p + F4p + F5
 
         return np.concatenate((dA_dt, dP_dt, dPA_dt, dLA_dt, dLPA_dt,
                                dPA2_dt, dLPA2_dt))

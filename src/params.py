@@ -8,8 +8,10 @@
 #  ④  P + LA  → LPA     (ka4, kd4)
 #  ⑤  PA + A  → PA₂     (ka5, kd5)   ★新規
 #  ⑥  PA₂ + L → LPA₂    (ka6, kd6)   ★新規
-ka1 = ka2 = ka3 = ka4 = ka5 = ka6 = 1e6   # 1/(M·s)
-kd1 = kd2 = kd3 = kd4 = kd5 = kd6 = 1e-3  # 1/s
+KA0 = 1e6   # 1/(M·s)  基準の会合速度定数 (粒子径依存モデルの ka,0)
+KD0 = 1e-3  # 1/s      基準の解離速度定数 (粒子径依存モデルの kd,0)
+ka1 = ka2 = ka3 = ka4 = ka5 = ka6 = KA0
+kd1 = kd2 = kd3 = kd4 = kd5 = kd6 = KD0
 
 # デフォルト濃度
 A0_def = P0_def = L0_def = 10e-9  # 10 nM
@@ -24,12 +26,23 @@ DP   = 1e-12       # 粒子拡散係数 [m²/s]  (PA₂ も同値)
 T_sim = 600.0      # シミュレーション時間 [s]
 
 # 粒子径・LOD パラメータ
-PARTICLE_DIAMETERS_NM = [5, 10, 40, 100]  # 粒子径 [nm]
+PARTICLE_DIAMETERS_NM = [5, 10, 15, 20, 30, 40, 50, 60, 80, 100]  # 粒子径 [nm]
 EPSILON_TABLE = {     # モル吸光係数 ε [M⁻¹cm⁻¹]  (粒子径 nm → ε)
     5:   1.10e7,
     10:  1.01e8,
+    15:  3.67e8,
+    20:  9.21e8,
+    30:  3.36e9,
     40:  8.42e9,
+    50:  1.72e10,
+    60:  3.07e10,
+    80:  7.70e10,
     100: 1.57e11,
 }
 MEMBRANE_THICKNESS_CM = 0.013   # 光路長 = メンブレン厚さ 130 μm [cm]
 ABSORBANCE_THRESHOLD  = 0.05    # LOD 判定閾値 (吸光度)
+
+# 粒子径依存キネティクス用の物理定数 (ストークス・アインシュタイン式 D=kB*T/(6*pi*eta*r) 用)
+BOLTZMANN_J_PER_K   = 1.380649e-23  # ボルツマン定数 [J/K]
+TEMPERATURE_K       = 298.0         # 温度 25℃ [K]
+WATER_VISCOSITY_PAS = 1.0e-3        # 水の粘度 [Pa·s]
