@@ -1,18 +1,25 @@
 import numpy as np
 
-from .params import EPSILON_TABLE, MEMBRANE_THICKNESS_CM, ABSORBANCE_THRESHOLD
+from .params import MEMBRANE_THICKNESS_CM, ABSORBANCE_THRESHOLD
 
 
 # ============================================================
 # LOD 計算関数
 # ============================================================
+def molar_extinction_coefficient(d_nm):
+    """
+    金ナノ粒子のモル吸光係数 ε(D) [M⁻¹cm⁻¹]。
+    """
+    return 10 ** (1.0643 * np.log10(1.5 * np.pi * d_nm**3) + 4.0935)
+
+
 def calc_absorbance(captured_conc_M, d_nm):
     """
     吸光度 = ε(d) × ℓ × [LPA+LPA₂]
     d_nm: 粒子径 [nm]
     captured_conc_M: [LPA]+[LPA₂] [M]
     """
-    epsilon = EPSILON_TABLE[d_nm]
+    epsilon = molar_extinction_coefficient(d_nm)
     return epsilon * MEMBRANE_THICKNESS_CM * captured_conc_M
 
 

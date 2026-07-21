@@ -42,7 +42,7 @@ def antibodies_per_particle(d_nm):
     return N_REF_ANTIBODIES * (d_nm / D_REF_NM) ** 2
 
 
-def steric_factor(d_nm, L0_tot):
+def steric_factor(d_nm, L0_tot, with_steric=True):
     """
     リガンド占有の立体障害係数 g(r,S) = pi*r^2 / S。
 
@@ -51,10 +51,10 @@ def steric_factor(d_nm, L0_tot):
     S はその逆数 S = 1/([L0]*b*N_A) [m^2]。
     (元スライドの S=[L0]/(b*N_A) は次元・符号が破綻するため逆数を採用)
 
-    d_nm=None の場合は旧モデル互換として g=1.0 を返す
-    (L_free = L0 - LA - LPA - LPA2 と一致させるため)。
+    d_nm=None の場合、または with_steric=False の場合は g=1.0 を返す
+    (L_free = L0 - LA - LPA - LPA2 と一致し、立体障害効果を無効化する)。
     """
-    if d_nm is None:
+    if d_nm is None or not with_steric:
         return 1.0
 
     r_m = (d_nm * 1e-9) / 2.0
@@ -102,7 +102,12 @@ def rate_constants(d_nm, alpha=1.0, with_PA2=True):
 
     n = antibodies_per_particle(d_nm)
     n_alpha = n ** alpha
-    occ = max(n - 1.0, 0.0) / n if n > 0 else 0.0  # (n-1)/n をクランプ
+
+    # 2個目の抗原結合(1個目がすでに埋まっている粒子)は、
+    # 「最初から n-1 個しか抗体を持たない粒子」として同じ f() を (n-1) に適用する
+    # (f(n)・(n-1)/n という2要素式ではなく f(n-1) に統一。alpha=1 では両者は数学的に一致する)
+    n_minus_1 = max(n - 1.0, 0.0)
+    n_minus_1_alpha = n_minus_1 ** alpha if n_minus_1 > 0 else 0.0
 
     ka1 = n_alpha * KA0
     ka2 = KA0 / np.sqrt(2.0)
@@ -111,10 +116,10 @@ def rate_constants(d_nm, alpha=1.0, with_PA2=True):
     kd1 = kd2 = kd3 = kd4 = KD0
 
     if with_PA2:
-        ka1p, kd1p = occ * n_alpha * KA0, 2.0 * KD0
-        ka3p, kd3p = (occ * n_alpha / np.sqrt(2.0)) * KA0, KD0
-        ka4p, kd4p = (occ * n_alpha / np.sqrt(2.0)) * KA0, KD0
-        ka5,  kd5  = occ * n_alpha * KA0, KD0
+        ka1p, kd1p = n_minus_1_alpha * KA0, 2.0 * KD0
+        ka3p, kd3p = (n_minus_1_alpha / np.sqrt(2.0)) * KA0, KD0
+        ka4p, kd4p = (n_minus_1_alpha / np.sqrt(2.0)) * KA0, KD0
+        ka5,  kd5  = n_minus_1_alpha * KA0, KD0
     else:
         ka1p = kd1p = ka3p = kd3p = ka4p = kd4p = ka5 = kd5 = 0.0
 

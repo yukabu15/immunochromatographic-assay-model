@@ -10,7 +10,7 @@ from .kinetics import rate_constants, steric_factor, diffusion_coefficient
 # コアシミュレーション関数 (7 変数 PDE)
 # ============================================================
 def simulate(A0, P0, L0_tot, case='PMU', N=200, T=600.0,
-             t_eval=None, with_PA2=True, d_nm=None, alpha=1.0):
+             t_eval=None, with_PA2=True, d_nm=None, alpha=1.0, with_steric=True):
     """
     拡張 PDE を BDF 法で数値積分。
 
@@ -26,6 +26,8 @@ def simulate(A0, P0, L0_tot, case='PMU', N=200, T=600.0,
     d_nm, alpha: 粒子径依存キネティクスを使う場合に指定する。
         d_nm=None (デフォルト) なら旧モデル(サイズ非依存の固定速度定数,
         g=1, DP=params.DP)と完全に一致する。
+    with_steric: False にすると d_nm 依存の速度定数・拡散係数は維持したまま
+        立体障害係数だけ g=1 に固定する (g(r,S)の効果切り分け用)。
 
     Returns: (sol, x, in_cap, Ae, Pe, PAe, PA2e)
     """
@@ -37,7 +39,7 @@ def simulate(A0, P0, L0_tot, case='PMU', N=200, T=600.0,
 
     # 粒子径依存の速度定数・立体障害係数・拡散係数
     rc     = rate_constants(d_nm, alpha, with_PA2)
-    g      = steric_factor(d_nm, L0_tot)
+    g      = steric_factor(d_nm, L0_tot, with_steric=with_steric)
     DP_eff = diffusion_coefficient(d_nm)
 
     # PME 平衡濃度 (流入条件と内部PDEのキネティクスを一致させる)
